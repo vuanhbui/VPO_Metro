@@ -65,6 +65,43 @@ def evaluate_f1(preds, gts, iou_thresh=0.5):
     f1   = 2*prec*rec/(prec+rec) if prec+rec else 0
     return prec, rec, f1
 
+# Non-maximum suppression for overlapping boxes
+def nms(boxes, overlap_thresh=0.3):
+    """Perform non-maximum suppression on a list of boxes.
+
+    Parameters
+    ----------
+    boxes : list of tuples
+        Each tuple is (x1, y1, x2, y2).
+    overlap_thresh : float
+        IoU threshold above which a box is suppressed.
+
+    Returns
+    -------
+    list of tuples
+        Filtered list of boxes after suppression.
+    """
+    if not boxes:
+        return []
+    b = np.array(boxes)
+    x1, y1, x2, y2 = b[:,0], b[:,1], b[:,2], b[:,3]
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = np.argsort(y2)
+    keep = []
+    while order.size > 0:
+        i = order[-1]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[:-1]])
+        yy1 = np.maximum(y1[i], y1[order[:-1]])
+        xx2 = np.minimum(x2[i], x2[order[:-1]])
+        yy2 = np.minimum(y2[i], y2[order[:-1]])
+        w = np.maximum(0, xx2 - xx1 + 1)
+        h = np.maximum(0, yy2 - yy1 + 1)
+        inter = w * h
+        overlap = inter / areas[order[:-1]]
+        order = order[np.where(overlap <= overlap_thresh)]
+    return b[keep].astype(int).tolist()
+
 
 
 def evaluate_full_test():
@@ -153,7 +190,24 @@ def validate_learn():
     
 # --- Segmentation + classification pipeline ---
 
-def segment_regions(image):
+def segment_regions(image, classify=False):
+    """Detect candidate regions in the image.
+
+    Parameters
+    ----------
+    image : ndarray
+        RGB image scaled between 0 and 1.
+    classify : bool, optional
+        If True, each candidate box is classified using ``classify_region``.
+        Boxes predicted as background (label 0) are discarded and the label is
+        returned along with the box coordinates.
+
+    Returns
+    -------
+    list
+        When ``classify`` is False, returns ``[(x1,y1,x2,y2), ...]``.
+        When ``classify`` is True, returns ``[(x1,y1,x2,y2,label), ...]``.
+    """
     # Preprocessing: blur to reduce noise
     img_uint8 = (image*255).astype(np.uint8)
     blurred = cv2.GaussianBlur(img_uint8, (9,9), 2)
@@ -207,6 +261,18 @@ def segment_regions(image):
             x1, y1 = max(x-r,0), max(y-r,0)
             x2, y2 = x1 + 2*r, y1 + 2*r
             boxes.append((x1, y1, x2, y2))
+
+    # Non maximum suppression on all candidate boxes
+    boxes = nms(boxes, overlap_thresh=0.3)
+
+    if classify:
+        detections = []
+        for (x1, y1, x2, y2) in boxes:
+            label = classify_region(image[y1:y2, x1:x2])
+            if label != 0:
+                detections.append((x1, y1, x2, y2, label))
+        return detections
+
     return boxes
 
 # Classification via HOG+SVM
@@ -307,11 +373,10 @@ def metro2025(mode='Learn', viewImages=1):
 
         # detection/classification
         bd_list = []
-        boxes = segment_regions(im) if mode=='Test' else []
+        boxes = segment_regions(im, classify=True) if mode=='Test' else []
         if mode=='Test':
-            for (x1,y1,x2,y2) in boxes:
-                cls = classify_region(im[y1:y2, x1:x2])
-                bd_list.append([n,y1,y2,x1,x2,cls])
+            for (x1, y1, x2, y2, cls) in boxes:
+                bd_list.append([n, y1, y2, x1, x2, cls])
         else:
             for k in np.where(GT[:,0]==n)[0]:
                 b = np.round(GT[k,1:5]).astype(int)
