@@ -51,6 +51,18 @@ def evaluate_f1(preds, gts, iou_thresh=0.5):
     f1   = 2*prec*rec/(prec+rec) if prec+rec else 0
     return prec, rec, f1
 
+def non_max_suppression(boxes, iou_thresh=0.3):
+    """NMS keeping box with highest area or circularity."""
+    if not boxes:
+        return []
+    boxes = sorted(boxes, key=lambda b: (b[4], b[5]), reverse=True)
+    keep = []
+    while boxes:
+        cur = boxes.pop(0)
+        keep.append(cur)
+        boxes = [b for b in boxes if iou(cur[:4], b[:4]) <= iou_thresh]
+    return [b[:4] for b in keep]
+
 # --- Segmentation + classification pipeline ---
 def segment_regions(im):
     hsv = cv2.cvtColor((im*255).astype(np.uint8), cv2.COLOR_RGB2HSV)
@@ -60,14 +72,15 @@ def segment_regions(im):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
     mask   = cv2.morphologyEx(mask,cv2.MORPH_OPEN,kernel)
     cnts,_= cv2.findContours(mask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-    boxes=[]
+    boxes_info=[]
     for c in cnts:
         x,y,w,h = cv2.boundingRect(c)
         area    = cv2.contourArea(c)
         peri    = cv2.arcLength(c,True)
         circ    = 4*np.pi*area/(peri*peri) if peri>0 else 0
         if w*h>=area_min and circ>=circ_thresh:
-            boxes.append((x,y,x+w,y+h))
+            boxes_info.append((x,y,x+w,y+h,area,circ))
+    boxes = non_max_suppression(boxes_info, iou_thresh=0.3)
     return boxes
 
 def classify_region(crop):

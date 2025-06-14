@@ -65,6 +65,21 @@ def evaluate_f1(preds, gts, iou_thresh=0.5):
     f1   = 2*prec*rec/(prec+rec) if prec+rec else 0
     return prec, rec, f1
 
+def non_max_suppression(boxes, iou_thresh=0.3):
+    """Remove overlapping boxes using IoU and keep the one with the best
+    area or circularity."""
+    if not boxes:
+        return []
+
+    # sort boxes by area then circularity descending
+    boxes = sorted(boxes, key=lambda b: (b[4], b[5]), reverse=True)
+    keep = []
+    while boxes:
+        current = boxes.pop(0)
+        keep.append(current)
+        boxes = [b for b in boxes if iou(current[:4], b[:4]) <= iou_thresh]
+    return [b[:4] for b in keep]
+
 
 
 def evaluate_full_test():
@@ -184,7 +199,7 @@ def segment_regions(image):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    boxes = []
+    boxes_info = []
     # 1) Contours + circularity
     cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for c in cnts:
@@ -196,7 +211,7 @@ def segment_regions(image):
             aspect = w / float(h) if h>0 else 0
             # filter nearly square regions only
             if 0.9 <= aspect <= 1.1:
-                boxes.append((x, y, x+w, y+h))
+                boxes_info.append((x, y, x+w, y+h, area, circ))
     # 2) HoughCircles fallback
     gray_mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)[:,:,0]
     circles = cv2.HoughCircles(gray_mask, cv2.HOUGH_GRADIENT, dp=1.2,
@@ -206,7 +221,10 @@ def segment_regions(image):
         for x, y, r in np.round(circles[0]).astype(int):
             x1, y1 = max(x-r,0), max(y-r,0)
             x2, y2 = x1 + 2*r, y1 + 2*r
-            boxes.append((x1, y1, x2, y2))
+            area = np.pi*r*r
+            boxes_info.append((x1, y1, x2, y2, area, 1.0))
+
+    boxes = non_max_suppression(boxes_info, iou_thresh=0.3)
     return boxes
 
 # Classification via HOG+SVM
