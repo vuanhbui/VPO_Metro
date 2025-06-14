@@ -26,8 +26,8 @@ svm_model_path = 'svm_model.pkl'
 svm = None
 
 # Segmentation parameters
-area_min = 1500            # minimal area
-circ_thresh = 0.7          # minimal circularity
+area_min = 3000            # minimal area
+circ_thresh = 0.85         # minimal circularity
 neg_samples_per_gt = 2     # negative samples per GT in Learn
 
 # IoU & F1 helpers

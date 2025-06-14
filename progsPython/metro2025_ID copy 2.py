@@ -12,8 +12,8 @@ from sklearn.svm import LinearSVC
 from sklearn.model_selection import GridSearchCV
 
 # --- Pipeline parameters ---
-area_min         = 1000    # segmentation minimal area
-circ_thresh      = 0.7     # minimal circularity
+area_min         = 3000    # segmentation minimal area
+circ_thresh      = 0.85    # minimal circularity
 neg_samples_per_gt = 2     # negative samples per GT in Learn
 svm_model_path   = 'svm_model.pkl'
 
